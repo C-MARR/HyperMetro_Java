@@ -3,6 +3,7 @@ package metro;
 public enum MenuCommands {
     ADD_HEAD("/add-head"),
     APPEND("/append"),
+    CONNECT("/connect"),
     EXIT("/exit"),
     OUTPUT("/output"),
     REMOVE("/remove")

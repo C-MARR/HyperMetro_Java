@@ -3,11 +3,13 @@ package metro;
 public class Station {
 
     final String name;
+    String line = null;
+    Boolean isHead = false;
     String prevStation = null;
     String nextStation = null;
-    Boolean isHead = false;
     int stationOrder = -1;
-    String line = null;
+    String transferStation = null;
+    String transferLine = null;
 
     public Station(String name) {
         this.name = name;
@@ -15,9 +17,9 @@ public class Station {
 
     @Override
     public String toString() {
-        return String.format("%s - %s - %s",
-                prevStation == null ? "depot" : prevStation,
-                name,
-                nextStation == null ? "depot" : nextStation);
+        return (prevStation == null ? "depot\n" : "")
+                + name + (transferStation != null && transferLine != null
+                    ? String.format(" - %s (%s)", transferStation, transferLine) : "")
+                + (nextStation == null ? "\ndepot" : "");
     }
 }

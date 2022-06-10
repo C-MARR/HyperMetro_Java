@@ -1,8 +1,6 @@
 package metro;
 
-import com.google.gson.Gson;
-import com.google.gson.internal.LinkedTreeMap;
-
+import com.google.gson.*;
 import java.io.BufferedReader;
 import java.io.FileReader;
 import java.util.*;
@@ -15,6 +13,52 @@ public class MetroSystem {
     public MetroSystem(String fileName) {
         this.fileName = fileName;
         this.metroLines = readStationsFile();
+    }
+
+    private LinkedList<LinkedList<Station>> readStationsFile() {
+        try (
+                FileReader fr = new FileReader(fileName);
+                BufferedReader br = new BufferedReader(fr)
+        ) {
+            LinkedList<LinkedList<Station>> lines = new LinkedList<>();
+            JsonElement jsonElement = JsonParser.parseReader(br);
+            JsonObject linesFromJson = jsonElement.getAsJsonObject();
+            linesFromJson.entrySet().forEach(line -> {
+                String lineName = line.getKey();
+                LinkedList<Station> stations = new LinkedList<>();
+                JsonObject stationsFromJson = line.getValue().getAsJsonObject();
+                stationsFromJson.entrySet().forEach(station -> {
+                    Station newStation = new Station(station.getValue().getAsJsonObject().get("name").getAsString());
+                    newStation.line = lineName;
+                    newStation.stationOrder = Integer.parseInt(station.getKey());
+                    if (newStation.stationOrder == 1) {
+                        newStation.isHead = true;
+                    }
+                    JsonElement transfer = station.getValue().getAsJsonObject().get("transfer");
+                    if (!transfer.getAsJsonArray().isEmpty()) {
+                        transfer.getAsJsonArray().forEach(element -> {
+                            newStation.transferLine = element.getAsJsonObject().get("line").getAsString();
+                            newStation.transferStation = element.getAsJsonObject().get("station").getAsString();
+                        });
+                    }
+                    stations.add(newStation);
+                });
+                stations.sort(Comparator.comparingInt(station -> station.stationOrder));
+                stations.forEach(station -> {
+                    if (!station.isHead) {
+                        station.prevStation = stations.get(station.stationOrder - 2).name;
+                    }
+                    if (station.stationOrder != stations.size()) {
+                        station.nextStation = stations.get(station.stationOrder).name;
+                    }
+                });
+                lines.add(stations);
+            });
+            return lines;
+        } catch (Exception e) {
+            System.out.println("Error! Such a file doesn't exist!");
+            return new LinkedList<>();
+        }
     }
 
     public boolean menu() {
@@ -32,10 +76,23 @@ public class MetroSystem {
             String lineName = input.split("\"")[1];
             if (command.equals(MenuCommands.OUTPUT.getCommand())) {
                 printStationList(lineName);
+            } else if (command.equals(MenuCommands.CONNECT.getCommand())) {
+                if (!input.matches("^\\S+ \"[\\S ]+\" \"[\\S ]+\" \"[\\S ]+\" \"[\\S ]+\"*")) {
+                    MenuCommands.invalidCommandError();
+                } else {
+                    var transferStations = input.replaceFirst("^\\S+ \"", "").split("\" \"");
+                    String lineToConnect = transferStations[0];
+                    String stationToConnect = transferStations[1];
+                    String transferLine = transferStations[2];
+                    String transferStation = transferStations[3].replace("\"", "");
+                    if (!connectStations(lineToConnect, stationToConnect, transferLine, transferStation)) {
+                        MenuCommands.invalidCommandError();
+                    }
+                }
             } else {
                 String stationName = input.replaceFirst("^\\S+ \"[\\S ]+\" ", "").replaceAll("\"", "");
                 if (command.equals(MenuCommands.ADD_HEAD.getCommand())) {
-                        addHeadStation(lineName, stationName);
+                    addHeadStation(lineName, stationName);
                 } else if (command.equals(MenuCommands.APPEND.getCommand())) {
                     appendStation(lineName, stationName);
                 } else if (command.equals(MenuCommands.REMOVE.getCommand())) {
@@ -61,6 +118,54 @@ public class MetroSystem {
                 line.forEach(station -> station.stationOrder++);
             }
         });
+    }
+
+    private void appendStation(String lineName, String stationName) {
+        metroLines.forEach(line -> {
+            if (line.getFirst().line.equals(lineName)) {
+                Station lastStation = line.getLast();
+                Station newStation = new Station(stationName);
+                lastStation.nextStation = stationName;
+                newStation.prevStation = lastStation.name;
+                newStation.line = lineName;
+                newStation.stationOrder = lastStation.stationOrder + 1;
+                line.add(newStation);
+            }
+        });
+    }
+
+    private boolean connectStations(String lineToConnect, String stationToConnect
+            , String transferLine, String transferStation) {
+        Station station1 = null;
+        Station station2 = null;
+        for (LinkedList<Station> line : metroLines) {
+            if (line.getFirst().line.equals(lineToConnect) || line.getFirst().line.equals(transferLine)) {
+                for (Station station : line) {
+                    if (station.name.equals(stationToConnect) && station.line.equals(lineToConnect)) {
+                        station1 = station;
+                    }
+                    if (station.name.equals(transferStation) && station.line.equals(transferLine)) {
+                        station2 = station;
+                    }
+                }
+            }
+        }
+        if (station1 != null && station2 != null) {
+            station1.transferLine = station2.line;
+            station1.transferStation = station2.name;
+            station2.transferLine = station1.line;
+            station2.transferStation = station1.name;
+            return true;
+        }
+        return false;
+    }
+
+    private void printStationList(String line) {
+        for (LinkedList<Station> metroLine : metroLines) {
+            if (metroLine.getFirst().line.equals(line)) {
+                metroLine.forEach(System.out::println);
+            }
+        }
     }
 
     private void removeStation(String lineName, String stationName) {
@@ -106,65 +211,6 @@ public class MetroSystem {
                 }
             }
         });
-    }
-
-    private void appendStation(String lineName, String stationName) {
-        metroLines.forEach(line -> {
-            if (line.getFirst().line.equals(lineName)) {
-                Station lastStation = line.getLast();
-                Station newStation = new Station(stationName);
-                lastStation.nextStation = stationName;
-                newStation.prevStation = lastStation.name;
-                newStation.line = lineName;
-                newStation.stationOrder = lastStation.stationOrder + 1;
-                line.add(newStation);
-            }
-        });
-    }
-
-    private void printStationList(String line) {
-        for (LinkedList<Station> metroLine : metroLines) {
-            if (metroLine.getFirst().line.equals(line)) {
-                metroLine.forEach(System.out::println);
-            }
-        }
-    }
-
-    private LinkedList<LinkedList<Station>> readStationsFile() {
-        try (
-                FileReader fr = new FileReader(fileName);
-                BufferedReader br = new BufferedReader(fr)
-                ) {
-            Gson gson = new Gson();
-            LinkedTreeMap<String, LinkedTreeMap<String, String>> fileStations = gson.fromJson(br, LinkedTreeMap.class);
-            LinkedList<LinkedList<Station>> lines = new LinkedList<>();
-            fileStations.forEach((line, value) -> {
-                LinkedList<Station> stations = new LinkedList<>();
-                value.entrySet().forEach((s -> {
-                    Station newStation = new Station(s.getValue());
-                    newStation.line = line;
-                    newStation.stationOrder = Integer.parseInt(s.getKey());
-                    if (newStation.stationOrder == 1) {
-                        newStation.isHead = true;
-                    }
-                    stations.add(newStation);
-                }));
-                stations.sort(Comparator.comparingInt(station -> station.stationOrder));
-                stations.forEach(station -> {
-                    if (!station.isHead) {
-                        station.prevStation = stations.get(station.stationOrder - 2).name;
-                    }
-                    if (station.stationOrder != stations.size()) {
-                        station.nextStation = stations.get(station.stationOrder).name;
-                    }
-                });
-                lines.add(stations);
-            });
-            return lines;
-        } catch (Exception e) {
-            System.out.println("Error! Such a file doesn't exist!");
-            return new LinkedList<>();
-        }
     }
 }
 
